@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Day Wise Analysis Gallery</title>
+<link rel="icon" type="image/png" href="logo.png">
+<style>
+  :root {
+    --bg:#0d1117; --header:#161b22; --text:#eaeef2; --cell:#111419; --border:#30363d; --accent:#2d6cdf; --cell-width:180px;
+  }
+  body.light{ --bg:#f6f8fa; --header:#eaecef; --text:#111; --cell:#fff; --border:#ccc; --accent:#0969da; }
+  body{ margin:0; padding-top:120px; font-family:Inter,Arial,system-ui; background:var(--bg); color:var(--text); transition:.18s;}
+  header{ position:fixed; left:0;right:0; top:0; background:var(--header); border-bottom:1px solid var(--border); padding:10px; z-index:40; display:flex; gap:10px; flex-wrap:wrap; align-items:center;}
+  button,select,input,textarea{ background:var(--cell); color:var(--text); border:1px solid var(--border); padding:6px 8px; border-radius:6px; cursor:pointer;}
+  button:hover, select:hover { background:var(--border); }
+  #gallery-container{ padding:10px; }
+  #gallery{ display:grid; gap:6px; align-content:start; }
+  .row{ display:contents; }
+  .cell{ background:var(--cell); border-radius:8px; padding:6px; display:flex; flex-direction:column; align-items:center; min-height:84px; box-sizing:border-box; }
+  .header-row{ position:sticky; top:80px; z-index:30; }
+  .header-cell{ text-align:center; font-weight:700; padding:8px; border-radius:6px; }
+  .cell img{ width:100%; height:auto; border-radius:6px; object-fit:var(--fit-mode); aspect-ratio:16/9; cursor:pointer; }
+  .info{ font-size:12px; opacity:.8; margin-top:6px; text-align:center; word-break:break-word;}
+  .tags{ display:flex; gap:6px; flex-wrap:wrap; justify-content:center; margin-top:6px; }
+  .tag-pill{ background:var(--accent); color:#fff; font-size:11px; padding:2px 6px; border-radius:6px; cursor:pointer; }
+  .hidden{ display:none !important; }
+  .modal{ position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.6); z-index:80; }
+  .modal.active{ display:flex; }
+  .modal-card{ background:var(--cell); padding:12px; border-radius:10px; width:92%; max-width:900px; color:var(--text); }
+  .modal-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; align-items:start; }
+  .modal img{ width:100%; border-radius:8px; }
+  .small{ font-size:13px; opacity:.9; }
+  label{ font-size:13px; margin-right:6px; }
+  #dayFilters{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .day-cb{ display:flex; gap:4px; align-items:center; font-size:13px; opacity:.9; }
+  .controls{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  input[type=range]{ width:160px; }
+  .status { font-size:13px; opacity:0.85; }
+  .footer-controls { display:flex; gap:8px; align-items:center; justify-content:flex-end; width:100%; margin-top:8px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="controls">
+    <button id="selectFolderBtn">Select Root Folder</button>
+    <button id="saveTagsBtn" disabled>Save tags.json</button>
+    <span id="unsavedIndicator" title="Unsaved changes" style="font-size:18px; color:#e74c3c; display:none; margin-left:6px;">●</span>
+    <button id="exportBtn" disabled>Export tags.json</button>
+    <button id="importBtn">Import tags.json</button>
+    <button id="sortToggle">Sort: Descending</button>
+    <label>Column width <input id="sizeSlider" type="range" min="120" max="300" value="300"/></label>
+    <label>Image mode
+      <select id="fitMode">
+        <option value="contain">Contain</option>
+        <option value="cover">Crop</option>
+        <option value="scale-down">Fit</option>
+      </select>
+    </label>
+    <button id="themeToggle">Switch to Light Mode</button>
+  </div>
+
+  <div style="flex:1"></div>
+
+  <div id="dayFilters" class="day-filters"></div>
+
+  <div style="width:12px"></div>
+
+  <select id="tagFilter"><option value="">Filter by tag (all)</option></select>
+  <input id="searchBox" placeholder="Search filename or notes" style="min-width:180px" />
+</header>
+
+<div id="gallery-container"><div id="gallery"></div></div>
+
+<!-- Modal -->
+<div id="modal" class="modal" role="dialog" aria-modal="true">
+  <div class="modal-card">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <div style="font-weight:700">Edit Day</div>
+      <div style="cursor:pointer" id="closeModal">✖</div>
+    </div>
+    <div class="modal-grid" style="margin-top:8px;">
+      <div style="display:flex; flex-direction:column; align-items:center; gap:8px;">
+        <img id="modalImage" src="" alt="preview">
+        <button id="openImageBtn">Open in New Tab</button>
+      </div>
+      <div style="display:flex;flex-direction:column; gap:8px;">
+        <div><strong id="modalFileName" class="small"></strong></div>
+        <div>
+          <div class="small">Tags (click to remove)</div>
+          <div id="modalTags" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;"></div>
+        </div>
+        <div>
+          <input id="newTagInput" placeholder="new tag" list="tagSuggestions" />
+          <datalist id="tagSuggestions"></datalist>
+          <button id="addTagBtn">Add Tag</button>
+        </div>
+        <div>
+          <div class="small">Notes</div>
+          <textarea id="notesInput" rows="6" style="width:100%; border-radius:6px; padding:6px; background:transparent; color:inherit; border:1px solid var(--border)"></textarea>
+          <div style="display:flex; gap:8px; margin-top:6px;">
+            <button id="saveBtn">Save</button>
+            <button id="deleteTagsBtn">Clear tags</button>
+            <button id="deleteNotesBtn">Clear notes</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="footer-controls"><div class="status" id="statusText">No folder selected</div></div>
+  </div>
+</div>
+
+<script>
+const days = ['Week','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+let dayVisibility = Object.fromEntries(days.map(d => [d, true]));
+let ascending = false;
+let rootHandle = null;
+let fileData = {};
+let tagDB = {};
+let currentKey = null;
+
+// unsaved tracking
+let unsaved = false;
+const unsavedIndicator = document.getElementById('unsavedIndicator');
+
+function markUnsaved(){
+  unsaved = true;
+  if (unsavedIndicator) unsavedIndicator.style.display = 'inline';
+}
+function clearUnsaved(){
+  unsaved = false;
+  if (unsavedIndicator) unsavedIndicator.style.display = 'none';
+}
+
+const selectFolderBtn = document.getElementById('selectFolderBtn');
+const saveTagsBtn = document.getElementById('saveTagsBtn');
+const exportBtn = document.getElementById('exportBtn');
+const importBtn = document.getElementById('importBtn');
+const sortToggle = document.getElementById('sortToggle');
+const sizeSlider = document.getElementById('sizeSlider');
+const fitMode = document.getElementById('fitMode');
+const themeToggle = document.getElementById('themeToggle');
+const dayFiltersDiv = document.getElementById('dayFilters');
+const tagFilter = document.getElementById('tagFilter');
+const searchBox = document.getElementById('searchBox');
+const gallery = document.getElementById('gallery');
+
+const modal = document.getElementById('modal');
+const modalImage = document.getElementById('modalImage');
+const modalFileName = document.getElementById('modalFileName');
+const modalTags = document.getElementById('modalTags');
+const newTagInput = document.getElementById('newTagInput');
+const addTagBtn = document.getElementById('addTagBtn');
+const notesInput = document.getElementById('notesInput');
+const saveBtn = document.getElementById('saveBtn');
+const closeModalBtn = document.getElementById('closeModal');
+const deleteTagsBtn = document.getElementById('deleteTagsBtn');
+const deleteNotesBtn = document.getElementById('deleteNotesBtn');
+const tagSuggestions = document.getElementById('tagSuggestions');
+const statusText = document.getElementById('statusText');
+const openImageBtn = document.getElementById('openImageBtn');
+
+// size + fit mode setup
+document.documentElement.style.setProperty('--cell-width', sizeSlider.value + 'px');
+document.documentElement.style.setProperty('--fit-mode', fitMode.value);
+
+// theme setup
+if (localStorage.getItem('us30_theme') === 'light') document.body.classList.add('light');
+function updateThemeButton(){ themeToggle.textContent = document.body.classList.contains('light') ? 'Switch to Dark Mode' : 'Switch to Light Mode'; }
+updateThemeButton();
+
+// build day filter checkboxes (Saturday/Sunday unchecked)
+days.forEach(day=>{
+  const lbl = document.createElement('label'); lbl.className='day-cb';
+  const cb = document.createElement('input'); cb.type='checkbox';
+  cb.checked = !(day === 'Week' || day === 'Saturday' || day === 'Sunday');
+  dayVisibility[day] = cb.checked;
+  cb.dataset.day = day;
+  cb.addEventListener('change', ()=>{ dayVisibility[day] = cb.checked; renderGallery(); });
+  lbl.appendChild(cb); lbl.appendChild(document.createTextNode(' ' + day));
+  dayFiltersDiv.appendChild(lbl);
+});
+
+// --- event handlers ---
+selectFolderBtn.addEventListener('click', async ()=>{
+  try {
+    rootHandle = await window.showDirectoryPicker();
+    statusText.textContent = 'Selected: ' + (rootHandle.name || 'root');
+    await loadFilesFromRoot();
+    await loadTagsJsonIfExists();
+    renderGallery();
+    saveTagsBtn.disabled = false;
+    exportBtn.disabled = false;
+  } catch (err) { console.error(err); statusText.textContent = 'Folder selection cancelled or not supported.'; alert('Folder selection cancelled or not supported.'); }
+});
+
+saveTagsBtn.addEventListener('click', async ()=>{
+  if (!rootHandle) return alert('Select root folder first');
+  await writeTagsJson();
+  statusText.textContent = 'tags.json saved.';
+  clearUnsaved();
+});
+
+exportBtn.addEventListener('click', async ()=>{
+  const blob = new Blob([JSON.stringify(tagDB, null, 2)], {type: 'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'tags.json'; a.click();
+  URL.revokeObjectURL(url);
+});
+
+importBtn.addEventListener('click', async ()=>{
+  try {
+    const [fileHandle] = await window.showOpenFilePicker({types:[{description:'JSON', accept:{'application/json':['.json']}}]});
+    if (!fileHandle) return;
+    const f = await fileHandle.getFile();
+    const txt = await f.text();
+    const parsed = JSON.parse(txt);
+    tagDB = {...tagDB, ...parsed};
+    statusText.textContent = 'Imported tags.json (merged).';
+    renderGallery();
+    buildTagOptions();
+    markUnsaved();
+  } catch (e) {
+    console.error(e);
+    alert('Import cancelled or invalid JSON file');
+  }
+});
+
+sortToggle.addEventListener('click', ()=>{ ascending = !ascending; sortToggle.textContent = 'Sort: ' + (ascending ? 'Ascending' : 'Descending'); renderGallery(); });
+sizeSlider.addEventListener('input', ()=>{ document.documentElement.style.setProperty('--cell-width', sizeSlider.value + 'px'); renderGallery(); });
+fitMode.addEventListener('change', ()=>{ document.documentElement.style.setProperty('--fit-mode', fitMode.value); renderGallery(); });
+themeToggle.addEventListener('click', ()=>{ document.body.classList.toggle('light'); localStorage.setItem('us30_theme', document.body.classList.contains('light') ? 'light' : 'dark'); updateThemeButton(); });
+searchBox.addEventListener('input', renderGallery);
+tagFilter.addEventListener('change', renderGallery);
+
+closeModalBtn.addEventListener('click', ()=> modal.classList.remove('active'));
+addTagBtn.addEventListener('click', addTagToCurrent);
+saveBtn.addEventListener('click', saveNotesForCurrent);
+deleteTagsBtn.addEventListener('click', ()=>{ if (!currentKey) return; delete tagDB[currentKey]; renderModalTags(); renderGallery(); markUnsaved(); });
+deleteNotesBtn.addEventListener('click', ()=>{ if (!currentKey) return; delete tagDB[currentKey]?.note; if (tagDB[currentKey] && !tagDB[currentKey].tags?.length && !tagDB[currentKey].note) delete tagDB[currentKey]; notesInput.value = ''; renderGallery(); markUnsaved(); });
+
+// --- core functions ---
+async function loadFilesFromRoot(){
+  fileData = {};
+  // Use the directory handle's entries/values properly (works in modern browsers supporting File System Access API)
+  for await (const entry of rootHandle.values()) {
+    if (entry.kind === 'directory') await traverseDir(entry, entry.name);
+    else if (entry.kind === 'file') await addFileEntry(entry, entry.name);
+  }
+
+  statusText.textContent = 'Loaded files from folder';
+}
+async function traverseDir(dirHandle, currentPath){
+  for await (const [name, handle] of dirHandle.entries()) {
+    const rel = currentPath + '/' + name;
+    if (handle.kind === 'file') await addFileEntry(handle, rel);
+    else if (handle.kind === 'directory') await traverseDir(handle, rel);
+  }
+}
+async function addFileEntry(fileHandle, relativePath){
+  const ext = relativePath.split('.').pop().toLowerCase();
+  const imgExts = ['png','jpg','jpeg','webp','gif','bmp','svg'];
+  if (!imgExts.includes(ext)) return;
+  const parts = relativePath.split('/');
+  const fileName = parts[parts.length - 1];
+  const nameNoExt = fileName.replace(/\.[^.]+$/, '');
+  const week = parts.length > 1 ? parts[parts.length - 2] : 'Misc';
+  const day = days.find(d => d !== 'Week' && nameNoExt.toLowerCase().includes(d.toLowerCase())) || 'Misc';
+  if (!fileData[week]) fileData[week] = {};
+  if (!fileData[week][day]) fileData[week][day] = { handle: fileHandle, path: relativePath, name: fileName };
+}
+
+async function loadTagsJsonIfExists(){
+  try {
+    const fh = await rootHandle.getFileHandle('tags.json', {create:false});
+    const file = await fh.getFile();
+    const txt = await file.text();
+    tagDB = JSON.parse(txt || '{}');
+    statusText.textContent = 'Loaded existing tags.json';
+  } catch { tagDB = {}; statusText.textContent = 'No tags.json found — starting fresh'; }
+  buildTagOptions();
+}
+async function writeTagsJson(){
+  const handle = await rootHandle.getFileHandle('tags.json', {create:true});
+  const writable = await handle.createWritable();
+  await writable.write(JSON.stringify(tagDB, null, 2));
+  await writable.close();
+}
+function buildTagOptions(){
+  const set = new Set();
+  Object.values(tagDB).forEach(obj=>{ if (!obj || !obj.tags) return; obj.tags.forEach(t => set.add(t)); });
+  tagFilter.innerHTML = '<option value="">Filter by tag (all)</option>';
+  Array.from(set).sort().forEach(t=>{ const o=document.createElement('option');o.value=t;o.textContent=t;tagFilter.appendChild(o); });
+  tagSuggestions.innerHTML = '';
+  Array.from(set).sort().forEach(t=>{ const opt=document.createElement('option');opt.value=t;tagSuggestions.appendChild(opt); });
+}
+function renderGallery(){
+  gallery.innerHTML = '';
+  if (!Object.keys(fileData).length) return;
+  const weeks = Object.keys(fileData).sort((a,b)=> ascending ? a.localeCompare(b) : b.localeCompare(a));
+  const visibleDays = days.filter(d => dayVisibility[d]);
+  gallery.style.gridTemplateColumns = `repeat(${visibleDays.length}, var(--cell-width))`;
+  const headerRow = document.createElement('div'); headerRow.className='row header-row';
+  visibleDays.forEach(day=>{ const cell=document.createElement('div'); cell.className='cell header-cell'; cell.textContent=day; headerRow.appendChild(cell); });
+  gallery.appendChild(headerRow);
+  const q=(searchBox.value||'').toLowerCase(); const tagF=tagFilter.value;
+  weeks.forEach(week=>{
+    const row=document.createElement('div'); row.className='row';
+    visibleDays.forEach(day=>{
+      const cell=document.createElement('div'); cell.className='cell';
+      if(day==='Week'){const w=document.createElement('div');w.style.fontWeight=700;w.textContent=week;cell.appendChild(w);}
+      else{
+        const entry=fileData[week]&&fileData[week][day];
+        if(!entry){cell.textContent='-';}
+        else{
+          const{handle,path,name}=entry;const db=tagDB[path]||{};const tags=db.tags||[];const note=db.note||'';
+          if(q&&!(name.toLowerCase().includes(q)||note.toLowerCase().includes(q)||tags.join(' ').toLowerCase().includes(q))){cell.classList.add('hidden');row.appendChild(cell);return;}
+          if(tagF&&!tags.includes(tagF)){cell.classList.add('hidden');row.appendChild(cell);return;}
+
+          const img=document.createElement('img');
+          // create object URL from the file (no await inside render - as originally done)
+          handle.getFile().then(file=>{ const url=URL.createObjectURL(file); img.src=url; });
+          img.addEventListener('click',()=>openModal(path));
+
+          const weekLabel=document.createElement('div');
+          weekLabel.className='info';
+          weekLabel.textContent=week;
+
+          const info=document.createElement('div');
+          info.className='info';
+          info.textContent=name;
+
+          const tagsDiv=document.createElement('div');
+          tagsDiv.className='tags';
+          tags.forEach(t=>{
+            const pill=document.createElement('div');
+            pill.className='tag-pill';
+            pill.textContent=t;
+            pill.onclick=()=>{ tagFilter.value=t; renderGallery(); };
+            tagsDiv.appendChild(pill);
+          });
+
+          cell.append(img, weekLabel, info, tagsDiv);
+          if (note) {
+            const noteDiv = document.createElement('div');
+            noteDiv.className = 'info';
+            noteDiv.style.fontStyle = 'italic';
+            noteDiv.textContent = note;
+            cell.appendChild(noteDiv);
+          }
+        }
+      }
+      row.appendChild(cell);
+    });
+    gallery.appendChild(row);
+  });
+	  setTimeout(() => {
+    window.scrollTo({ left: document.body.scrollWidth, behavior: 'smooth' });
+  }, 100);
+
+}
+
+function openModal(key){
+  currentKey=key; modal.classList.add('active');
+  const entry=findEntryByKey(key);
+  if(!entry)return;
+  const {handle,path,name}=entry;
+  modalFileName.textContent=path;
+  handle.getFile().then(file=>{
+    const url=URL.createObjectURL(file);
+    modalImage.src=url;
+    openImageBtn.onclick=()=>window.open(url,'_blank');
+  });
+  const db=tagDB[key]||{};
+  notesInput.value=db.note||'';
+  renderModalTags();
+}
+function renderModalTags(){
+  modalTags.innerHTML='';
+  if(!currentKey)return;
+  const tags=(tagDB[currentKey]?.tags)||[];
+  tags.forEach(t=>{
+    const d=document.createElement('div');
+    d.className='tag-pill';
+    d.textContent=t+' ✕';
+    d.onclick=()=>removeTag(t);
+    modalTags.appendChild(d);
+  });
+}
+function removeTag(tag){
+  if(!currentKey)return;
+  tagDB[currentKey].tags=tagDB[currentKey].tags.filter(t=>t!==tag);
+  if(!tagDB[currentKey].tags.length&&!tagDB[currentKey].note)delete tagDB[currentKey];
+  renderModalTags();renderGallery();
+  markUnsaved();
+}
+function addTagToCurrent(){
+  const tag=newTagInput.value.trim();
+  if(!tag||!currentKey) return;
+  tagDB[currentKey]??={tags:[],note:''};
+  if(!tagDB[currentKey].tags.includes(tag)) tagDB[currentKey].tags.push(tag);
+  newTagInput.value='';
+  renderModalTags();renderGallery();buildTagOptions();
+  markUnsaved();
+}
+function saveNotesForCurrent(){
+  const note=notesInput.value.trim();
+  if(!currentKey) return;
+  tagDB[currentKey]??={tags:[],note:''};
+  tagDB[currentKey].note=note;
+  renderGallery();
+  markUnsaved();
+}
+function findEntryByKey(key){
+  for(const w in fileData){
+    for(const d in fileData[w]){
+      const e=fileData[w][d];
+      if(e.path===key) return e;
+    }
+  }
+  return null;
+}
+
+// Ctrl+S shortcut handler
+document.addEventListener('keydown', async (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+    e.preventDefault();
+    if (!rootHandle) return alert('Select root folder first');
+    try {
+      await writeTagsJson();
+      statusText.textContent = 'tags.json saved (via Ctrl+S).';
+      clearUnsaved();
+    } catch (err) {
+      console.error(err);
+      alert('Save failed: ' + (err && err.message ? err.message : err));
+    }
+  }
+});
+
+// warn on close if unsaved
+window.addEventListener('beforeunload', (e) => {
+  if (unsaved) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
+</script>
+</body>
+</html>
